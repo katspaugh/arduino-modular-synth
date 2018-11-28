@@ -24,8 +24,8 @@ int active_steps = 1;
 int offset = 0;
 int clock_counter = 0;
 int counter = 0;
-int steps = 8;
-bool positions[8] = {};
+int steps = MAX_STEPS;
+bool positions[MAX_STEPS] = {};
 
 bool send_tick = false;
 bool clock_state = false;
@@ -45,14 +45,13 @@ void checkButton() {
   if (last_button_state) {
     int press_time = millis() - button_pressed_time;
 
-    // Change the total steps on long press
+    // Change the offset on long press
     if (press_time >= LONG_PRESS) {
-      steps -= 1;
-      if (steps <= 0) steps = MAX_STEPS;
-      active_steps = min(active_steps, steps);
+      offset += 1;
+      if (offset >= steps) offset = 0;
     // or change the number of active steps
     } else {
-      active_steps = (active_steps + 1);
+      active_steps += 1;
       if (active_steps > steps) active_steps = 1;
       EEPROM.write(0, active_steps);
     }

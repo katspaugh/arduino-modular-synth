@@ -14,30 +14,24 @@
 #define DAC_ground    A2
 #define DAC_address   0x60
 
-static const int MAX_NO_CLOCK = 3000;
-static const int PULSE_TIME = 15;
+#define CLOCK_PPQ     24
+#define MAX_NO_CLOCK  3000
 
-int random_notes[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-bool random_gates[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+int random_notes[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 int random_count = 0;
 int last_update_index = -1;
 int random_notes_length = 16;
-int clock_div = 24;
+int tempo = 24;
+int offset = 0;
 int update_rate = 4;
 bool freeze = true;
-bool antifreeze = false;
-bool last_gate = false;
-int last_clock_time = millis();
-int clock_count = 0;
-int internal_clock_delay = 0;
-bool internal_clock = false;
-bool seq_mode = false;
+int clock_count = -1;
 bool send_tick = false;
 
+int CV0;
 int CV1;
 int CV2;
 int CV3;
-int CV4;
 
 void updateCV(word DC_Value) {
   Wire.beginTransmission(DAC_address);
@@ -47,65 +41,20 @@ void updateCV(word DC_Value) {
 }
 
 void checkPots() {
+  CV0 = analogRead(pot0);
   CV1 = analogRead(pot1);
   CV2 = analogRead(pot2);
   CV3 = analogRead(pot3);
-  CV4 = analogRead(pot0);
 
-  // Toggle the sequencer mode when all the pots are turned all the way down
-  if (CV1 == 0 && CV2 == 0 && CV3 == 0 && CV4 == 0) {
-    seq_mode = true;
-  } else if (CV1 == 1023 && CV2 == 1023 && CV3 == 1023 && CV4 == 1023) {
-    seq_mode = false;
-  }
-
-  // 4-step sequencer mode
-  if (seq_mode) {
-    freeze = false;
-    antifreeze = true;
-    update_rate = 1;
-    random_notes_length = 8;
-    clock_div = 24;
-
-    random_notes[0] = CV4;
-    random_notes[1] = CV4;
-    random_notes[2] = CV1;
-    random_notes[3] = CV1;
-    random_notes[4] = CV2;
-    random_notes[5] = CV2;
-    random_notes[6] = CV3;
-    random_notes[7] = CV3;
-
-    random_gates[0] = true;
-    random_gates[1] = false;
-    random_gates[2] = true;
-    random_gates[3] = false;
-    random_gates[4] = true;
-    random_gates[5] = false;
-    random_gates[6] = true;
-    random_gates[7] = false;
-  }
-  // Random mode
-  else {
-    random_notes_length = map(CV1, 0, 1023, 2, 32);
-    freeze = CV3 <= 0;
-    update_rate = map(CV3, 0, 1023, 5, 1);
-    antifreeze = update_rate == 5;
-    clock_div = round(map(CV4, 0, 1023, 24, 1) / 2) * 2;
-    internal_clock_delay = round(20 * clock_div);
-  }
+  tempo = map(CV0, 0, 1023, 100, 1);
+  random_notes_length = map(CV1, 0, 1023, 2, 16);
+  offset = map(CV2, 0, 1023, -3000, 0);
+  update_rate = map(CV3, 0, 1023, 5, 1);
+  freeze = CV3 <= 5;
 }
 
 int getRandomNote() {
-  return random(0, 1023);
-}
-
-bool getRandomGate() {
-  return random(0, 255) >= 127;
-}
-
-int getCurrentIndex() {
-  return random_count % random_notes_length;
+  return random(3000, 4095);
 }
 
 void addRandom() {
@@ -116,56 +65,25 @@ void addRandom() {
     if ((random_count % notes_in_cycle) == 0) {
       int update_index = (last_update_index + 1) % random_notes_length;
       last_update_index = update_index;
-
-      bool change_note = random(0, 255) >= 127;
-
-      if (antifreeze || change_note) {
-        random_notes[update_index] = getRandomNote();
-      }
-
-      if (antifreeze || !change_note) {
-        random_gates[update_index] = getRandomGate();
-      }
+      random_notes[update_index] = getRandomNote();
     }
   }
 
   random_count = (random_count + 1) % notes_in_cycle;
 }
 
-void playRandomNote(int index) {
+void playRandomNote() {
+  int index = random_count % random_notes_length;
   int cv = random_notes[index];
-  updateCV(cv);
-}
-
-void playRandom(int index) {
-  bool gate = random_gates[index];
-  digitalWrite(gate_pin, gate ? HIGH : LOW);
-
-  if (gate && (gate != last_gate)) {
-    playRandomNote(index);
-  }
-
-  last_gate = gate;
-}
-
-void onClock() {
-  if (clock_count >= clock_div) {
-    send_tick = true;
-    clock_count = 0;
-  }
-  clock_count += 1;
-  internal_clock = false;
+  updateCV(cv + offset);
 }
 
 void onTimer() {
   MsTimer2::stop();
+  MsTimer2::set(tempo, onTimer);
+  MsTimer2::start();
 
-  if (internal_clock) {
-    MsTimer2::set(internal_clock_delay, onTimer);
-    MsTimer2::start();
-
-    send_tick = true;
-  }
+  send_tick = true;
 }
 
 void setup() {
@@ -173,49 +91,40 @@ void setup() {
   pinMode(clock_out_pin, OUTPUT);
   pinMode(clock_pin, INPUT);
 
+  randomSeed(analogRead(DAC_vin));
+
   // Power up the DAC
   pinMode(DAC_vin, OUTPUT);
   pinMode(DAC_ground, OUTPUT);
   digitalWrite(DAC_vin, HIGH);
   digitalWrite(DAC_ground, LOW);
 
-  attachInterrupt(digitalPinToInterrupt(clock_pin), onClock, RISING);
-
-  randomSeed(analogRead(7));
   for (uint8_t i = 0; i < sizeof(random_notes); i++) {
     random_notes[i] = getRandomNote();
-    random_gates[i] = getRandomGate();
   }
 
   Wire.begin();
+  
+  checkPots();
+  onTimer();
 }
 
 void loop() {
-  checkPots();
-
-  if (!send_tick) {
-    int elapsed = millis() - last_clock_time;
-
-    if (elapsed >= MAX_NO_CLOCK) {
-      internal_clock = true;
-      onTimer();
-    }
-
-    if (elapsed >= PULSE_TIME) {
-      digitalWrite(clock_out_pin, LOW);
-    }
-
-    return;
-  }
-
-  last_clock_time = millis();
+  if (!send_tick) return;
   send_tick = false;
 
-  int index = getCurrentIndex();
+  clock_count += 1;
 
-  addRandom();
+  digitalWrite(clock_out_pin, (clock_count % 2) == 0);
 
-  playRandom(index);
+  if (clock_count >= CLOCK_PPQ || digitalRead(clock_pin)) {
+    clock_count = 0;
 
-  digitalWrite(clock_out_pin, HIGH);
+    checkPots();
+    addRandom();
+    playRandomNote();
+    digitalWrite(gate_pin, HIGH);
+  } else {
+    digitalWrite(gate_pin, LOW);
+  }
 }

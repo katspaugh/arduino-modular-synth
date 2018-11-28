@@ -1,77 +1,56 @@
-#include <MsTimer2.h>
+#define CLOCK_PIN          2
+#define OUT1               7
+#define OUT2               8
+#define OUT3               9
+#define OUT4               10
+#define OUT5               11
+#define OUT6               12
 
-#define CLOCK_SWITCH  2
-#define CLOCK_IN      3
-#define CLOCK_OUT_1   7
-#define CLOCK_OUT_2   8
-#define CLOCK_OUT_3   9
-#define CLOCK_OUT_4   11
-#define LED           13
-
-#define TEMPO_DELAY   20
-
-bool externalClock = false;
-bool timer = false;
-bool sendTick = false;
-int clockCount = -1;
-
-void onClockSwitch() {
-  // The switch is grounded when a jack is inserted
-  externalClock = digitalRead(CLOCK_SWITCH) == LOW;
-}
+bool send_tick = false;
+bool on = false;
+int count = -1;
 
 void onClock() {
-  sendTick = true;
-}
-
-void onTimer() {
-  if (!timer) return;
-  sendTick = true;
+  on = !on;
+  send_tick = true;
 }
 
 void setup() {
-  pinMode(CLOCK_IN, INPUT_PULLUP);
-  pinMode(CLOCK_SWITCH, INPUT);
-  pinMode(CLOCK_OUT_1, OUTPUT);
-  pinMode(CLOCK_OUT_2, OUTPUT);
-  pinMode(CLOCK_OUT_3, OUTPUT);
-  pinMode(CLOCK_OUT_4, OUTPUT);
+  pinMode(CLOCK_PIN, INPUT);
+  pinMode(12, OUTPUT);
+  pinMode(11, OUTPUT);
+  pinMode(10, OUTPUT);
+  pinMode(9, OUTPUT);
+  pinMode(8, OUTPUT);
+  pinMode(7, OUTPUT);
 
-  pinMode(LED, OUTPUT);
-  digitalWrite(LED, LOW);
-
-  attachInterrupt(digitalPinToInterrupt(CLOCK_IN), onClock, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(CLOCK_SWITCH), onClockSwitch, CHANGE);
-
-  randomSeed(analogRead(7));
-
-  onClockSwitch();
+  attachInterrupt(digitalPinToInterrupt(CLOCK_PIN), onClock, CHANGE);
 }
 
 void loop() {
-  if (timer && externalClock) {
-    timer = false;
-    MsTimer2::stop();
-  } else if (!timer && !externalClock) {
-    timer = true;
-    MsTimer2::set(TEMPO_DELAY, onTimer);
-    MsTimer2::start();
+  if (!send_tick) return;
+  send_tick = false;
+
+  if (on) {
+    count += 1;
+
+    if (count % 2 == 0) {
+      digitalWrite(OUT1, HIGH);
+      digitalWrite(OUT3, count % 4 == 0);
+      digitalWrite(OUT4, count % 6 == 0);
+      digitalWrite(OUT5, count % 8 == 0);
+      digitalWrite(OUT6, count % 16 == 0);
+    } else {
+      digitalWrite(OUT2, count % 3 == 0);
+    }
+
+    if (count >= 96) count = 0;
+  } else {
+    digitalWrite(OUT1, LOW);
+    digitalWrite(OUT2, LOW);
+    digitalWrite(OUT3, LOW);
+    digitalWrite(OUT4, LOW);
+    digitalWrite(OUT5, LOW);
+    digitalWrite(OUT6, LOW);
   }
-
-  if (!sendTick) return;
-
-  sendTick = false;
-
-  clockCount += 1;
-  if (clockCount > 24) clockCount = 0;
-
-  bool n2 = clockCount % 2 == 0;
-  bool n3 = !n2 && clockCount % 3 == 0;
-  bool n4 = n2 && clockCount % 4 == 0;
-
-  digitalWrite(CLOCK_OUT_1, n2);
-  digitalWrite(CLOCK_OUT_2, n3);
-  digitalWrite(CLOCK_OUT_3, n4);
-  digitalWrite(CLOCK_OUT_4, random(0, 1023) < 250);
 }
-

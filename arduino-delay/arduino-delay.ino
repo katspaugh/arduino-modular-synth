@@ -9,15 +9,16 @@
 #define LED                13
 
 static const int triggerLength = 2;
-static const int maxTriggers = 64;
+static const int maxTriggers = 200;
 bool gotTrigger = false;
 bool prevTrigger = false;
 int delay1 = 0;
 int delay2 = 0;
 int lastTrig1 = 0;
 int lastTrig2 = 0;
+int triggers1[maxTriggers];
+int triggers2[maxTriggers];
 int now = 0;
-int triggers[maxTriggers]; // keeps track of the start times of multiple triggers
 
 void checkInputs() {
   delay1 = map(analogRead(POT1), 0, 1023, 0, 600);
@@ -25,22 +26,28 @@ void checkInputs() {
 }
 
 void checkTimers() {
-  unsigned long diff;
+  unsigned long diff1, diff2;
+  int i, trig1, trig2;
 
-  for (int i = 0; i < maxTriggers; i++) {
-    int trig = triggers[i];
+  for (i = 0; i < maxTriggers; i++) {
+    trig1 = triggers1[i];
+    trig2 = triggers2[i];
 
-    if (trig == 0) continue;
-
-    diff = (now - trig);
-
-    if (diff >= delay1) {
-      setTrigger1High();
-      if (diff >= delay2) triggers[i] = 0;
+    if (trig1 > 0) {
+      diff1 = (now - trig1);
+  
+      if (diff1 >= delay1) {
+        setTrigger1High();
+        triggers1[i] = 0;
+      }
     }
-    if (diff >= delay2) {
-      setTrigger2High();
-      if (diff >= delay1) triggers[i] = 0;
+    if (trig2 > 0) {
+      diff2 = (now - trig2);
+  
+      if (diff2 >= delay2) {
+        setTrigger2High();
+        triggers2[i] = 0;
+      }
     }
   }
 }
@@ -56,19 +63,29 @@ void setTrigger2High() {
 }
 
 void setTriggersLow() {
-  if ((now - lastTrig1) >= triggerLength) {
+  unsigned long diff1 = now - lastTrig1;
+  unsigned long diff2 = now - lastTrig2;
+
+  if (diff1 >= triggerLength) {
     digitalWrite(TRIGGER1_OUT_PIN, LOW);
   }
-  if ((now - lastTrig2) >= triggerLength) {
+  if (diff2 >= triggerLength) {
     digitalWrite(TRIGGER2_OUT_PIN, LOW);
   }
 }
 
 void addTimer() {
-  for (int i = 0; i < maxTriggers; i++) {
-    if (triggers[i] == 0) {
-      triggers[i] = now;
-      return;
+  int i;
+  for (i = 0; i < maxTriggers; i++) {
+    if (triggers1[i] == 0) {
+      triggers1[i] = now;
+      break;
+    }
+  }
+  for (i = 0; i < maxTriggers; i++) {
+    if (triggers2[i] == 0) {
+      triggers2[i] = now;
+      break;
     }
   }
 }

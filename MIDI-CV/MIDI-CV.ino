@@ -155,7 +155,6 @@ void handleNoteOn(byte channel, byte pitch, byte velocity) {
   themap.noteOn(pitch);
 
   updateOutputs();
-
 }
 
 /* void handleNoteOff(byte channel, byte pitch, byte velocity)
@@ -386,12 +385,10 @@ void setup() {
   Wire.begin();
 
   // Initiate MIDI communications, listen to all channels
-  //MIDI.begin(MIDI_CHANNEL_OMNI);
-
-  MIDI.begin(1);
+  MIDI.begin(MIDI_CHANNEL_OMNI);
 
   // .begin sets the thru mode to on, so we'll have to turn it off if we don't want echo
-  //MIDI.turnThruOff();
+  MIDI.turnThruOff();
 
   // so it is called upon reception of a NoteOn.
   MIDI.setHandleNoteOn(handleNoteOn);  // Put only the name of the function

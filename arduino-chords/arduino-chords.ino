@@ -9,15 +9,14 @@ static const int LED = 13;
 // Analog pins for the potentiometers
 const int pot1 = A1; // scale
 const int pot2 = A2; // octave
-const int pot3 = A3; // key
+const int pot3 = A3; // arp pattern
 
 const byte DAC_address = 0x60;
 // 2^12 = 4096 total DAC counts.
 // 4096/5 = 819.2 DAC counts per volt on a 5V supply
 // 819.2/12 = dac counts per semitone = 68.26
 // times 100 for some extra calculation precision = 6826
-//static const uint32_t DAC_CAL = 8889;
-static const uint32_t DAC_CAL = 6826;
+static const uint32_t DAC_CAL = 8858;
 
 int scale = 0;          // scale
 int octaveOffset = 0;   // octave
@@ -149,8 +148,8 @@ void readInputs() {
   CV3 = analogRead(pot3);
 
   scale = map(CV1, 0, 1023, 0, 7);
-  //octaveOffset = map(CV2, 0, 1023, 0, 3);
-  semitoneOffset = map(CV2, 0, 1023, 0, 12);
+  octaveOffset = map(CV2, 0, 1023, 0, 3);
+  //semitoneOffset = map(CV2, 0, 1023, 0, 12);
   total_arp_beats = map(CV3, 0, 1023, 1, 5);
 }
 
