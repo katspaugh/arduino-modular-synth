@@ -6,64 +6,64 @@
 #define INVERTED_OUT_PIN   10
 #define RESET_PIN          A7
 #define LONG_PRESS         300
-#define CLOCK_PULSES       1
+#define SHORT_PRESS        10
 #define MAX_STEPS          8
 
-int leds[] = {
-  3,
-  4,
-  5,
-  6,
-  8,
-  9,
-  7,
-  2
-};
+int leds[] = { 2, 7, 9, 8, 6, 5, 4, 3 };
 
-int active_steps = 1;
+bool alt_positions = false;
+int active_steps1 = 1;
+int active_steps2 = 1;
 int offset = 0;
-int clock_counter = 0;
-int counter = 0;
+int counter = -1;
 int steps = MAX_STEPS;
-bool positions[MAX_STEPS] = {};
+bool positions1[MAX_STEPS] = {};
+bool positions2[MAX_STEPS] = {};
 
 bool send_tick = false;
 bool clock_state = false;
+bool last_clock_state = false;
 bool last_button_state = false;
 bool last_reset_state = false;
 int button_pressed_time = 0;
 
-bool getPosition(uint8_t index) {
-  return positions[(index + offset) % steps];
+bool getPosition(uint8_t index, bool positions[MAX_STEPS]) {
+  int step_idx = (index + offset) % steps;
+  return positions[step_idx];
 }
 
 void checkButton() {
   bool button_state = digitalRead(BUTTON_PIN) == LOW;
   if (last_button_state == button_state) return;
+  last_button_state = button_state;
 
-  // On button up
-  if (last_button_state) {
-    int press_time = millis() - button_pressed_time;
+  int now = millis();
 
-    // Change the offset on long press
-    if (press_time >= LONG_PRESS) {
-      offset += 1;
-      if (offset >= steps) offset = 0;
-    // or change the number of active steps
+  if (button_state) {
+    button_pressed_time = now;
+  } else {
+    int press_duration = now - button_pressed_time;
+
+    if (press_duration < SHORT_PRESS) return;
+
+    if (press_duration >= LONG_PRESS) {
+      alt_positions = !alt_positions;
     } else {
-      active_steps += 1;
-      if (active_steps > steps) active_steps = 1;
-      EEPROM.write(0, active_steps);
+      if (alt_positions) {
+        active_steps2 += 1;
+        if (active_steps2 > steps) active_steps2 = 1;
+        setPositions(active_steps2, positions2);
+        EEPROM.write(1, active_steps2);
+      } else {
+        active_steps1 += 1;
+        if (active_steps1 > steps) active_steps1 = 1;
+        setPositions(active_steps1, positions1);
+        EEPROM.write(0, active_steps1);
+      }
     }
 
-    setPositions();
     setActiveLeds();
-  // On button down
-  } else {
-    button_pressed_time = millis();
   }
-
-  last_button_state = button_state;
 }
 
 void checkReset() {
@@ -73,7 +73,7 @@ void checkReset() {
   if (reset) counter = 0;
 }
 
-void setPositions() {
+void setPositions(int active_steps, bool positions[MAX_STEPS]) {
   for (int i = 0; i < steps; i++) {
     positions[i] = false;
   }
@@ -112,18 +112,21 @@ void setLed(int index, bool active) {
 
 void setActiveLeds() {
   for (int i = 0; i < steps; i++) {
-    setLed(i, getPosition(i));
+    setLed(i, getPosition(i, alt_positions ? positions2 : positions1));
   }
 }
 
 void onClockOn() {
-  bool is_active = getPosition(counter);
+  counter += 1;
+  if (counter >= steps) counter = 0;
 
-  digitalWrite(OUT_PIN, is_active ? HIGH : LOW);
-  digitalWrite(INVERTED_OUT_PIN, is_active ? LOW : HIGH);
-  setLed(counter, !is_active);
+  bool is_active1 = getPosition(counter, positions1);
+  digitalWrite(OUT_PIN, is_active1);
 
-  counter = (counter + 1) % steps;
+  bool is_active2 = getPosition(counter, positions2);
+  digitalWrite(INVERTED_OUT_PIN, is_active2);
+
+  setLed(counter, alt_positions ? !is_active2 : !is_active1);
 }
 
 void onClockOff() {
@@ -139,10 +142,7 @@ void pciSetup(byte pin) {
 }
 
 ISR(PCINT0_vect) {
-  clock_state = !clock_state;
-  if (clock_counter == 0) send_tick = true;
-  clock_counter += 1;
-  if (clock_counter >= CLOCK_PULSES) clock_counter = 0;
+  send_tick = true;
 }
 
 void setup() {
@@ -151,16 +151,18 @@ void setup() {
     pinMode(pin, OUTPUT);
   }
 
-  pinMode(CLOCK_PIN, INPUT_PULLUP);
+  pinMode(CLOCK_PIN, INPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(OUT_PIN, OUTPUT);
   pinMode(INVERTED_OUT_PIN, OUTPUT);
 
   pciSetup(CLOCK_PIN);
 
-  active_steps = EEPROM.read(0);
+  active_steps1 = EEPROM.read(0);
+  active_steps2 = EEPROM.read(1);
 
-  setPositions();
+  setPositions(active_steps1, positions1);
+  setPositions(active_steps2, positions2);
   setActiveLeds();
 }
 
@@ -169,8 +171,11 @@ void loop() {
   checkReset();
 
   if (!send_tick) return;
-
   send_tick = false;
+
+  clock_state = digitalRead(CLOCK_PIN);
+  if (clock_state == last_clock_state) return;
+  last_clock_state = clock_state;
 
   clock_state ? onClockOn() : onClockOff();
 }
