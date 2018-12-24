@@ -1,5 +1,4 @@
 #include <Wire.h>
-#include "tables.h"
 
 static const int CLOCK_PIN = 2;
 static const int VOCT_PIN = A0;
@@ -9,21 +8,73 @@ static const int LED = 13;
 // Analog pins for the potentiometers
 const int pot1 = A1; // scale
 const int pot2 = A2; // octave
-const int pot3 = A3; // arp pattern
+const int pot3 = A3; // key
 
 const byte DAC_address = 0x60;
 // 2^12 = 4096 total DAC counts.
 // 4096/5 = 819.2 DAC counts per volt on a 5V supply
 // 819.2/12 = dac counts per semitone = 68.26
 // times 100 for some extra calculation precision = 6826
-static const uint32_t DAC_CAL = 8858;
+static const uint32_t DAC_CAL = 8889;
+//static const uint32_t DAC_CAL = 6826;
 
-int scale = 0;          // scale
-int octaveOffset = 0;   // octave
-int semitoneOffset = 0; // key transposition
-int total_arp_beats = 3;
+static const int SCALES[8][24] = {
+  //scale00 Chromatic
+  {
+    0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10,  11,
+    12, 13, 13, 15, 16, 17, 18, 19, 20, 21, 22,  23
+  },
+  
+  //scale01 Major
+  {
+    0,  0,  2,  2,  4,  4,  5,  7,  7,  9,  9,   11,
+    12, 12, 14, 14, 16, 16, 17, 19, 19, 21, 21,  22
+  },
+  
+  //scale02 Minor
+  {
+    0,  0,  2,  3,  3,  5,  5,  7,  8,  8,  10,  10,
+    12, 12, 14, 15, 15, 17, 17, 19, 20, 20, 22,  22
+  },
+  
+  //scale03 Pentatonic
+  {
+    0,  0,  2,  3,  3,  5,  5,  7,  7,  7,  10,  10,
+    12, 12, 14, 15, 15, 17, 17, 19, 19, 19, 22,  22
+  },
+  
+  //scale04 Dorian
+  {
+    0,  0,  2,  3,  3,  5,  5,  7,  7,  9,  10,  10,
+    12, 12, 14, 15, 15, 17, 17, 19, 19, 21, 22,  22
+  },
+  
+  //scale05 Maj7(9)
+  {
+    0,  0,  0,  0,  4,  4,  4,  7,  7,  7,  7,   11,
+    12, 12, 12, 12, 16, 16, 16, 19, 19, 19, 19,  23
+  },
+  
+  //scale06 Minor7(9,11)
+  {
+    0,  0,  0,  3,  3,  3,  3,  7,  7,  7,  10,  10,
+    12, 12, 12, 15, 15, 15, 15, 19, 19, 19, 22,  22
+  },
+  
+  //scale07 (WholeTone)
+  {
+    0,  0,  2,  2,  4,  4,  6,  6,  8,  8,  10,  10,
+    12, 12, 14, 14, 16, 16, 18, 18, 20, 20, 22,  22
+  }
+};
+
+int scale = 0;
+int range = 12; // 1 octave range
+int octave_offset = 0;
+int arp_mode = 0;
 int arp_beat = 0;
-int chord_notes[] = { 0, 0, 0, 0, 0 };
+int total_arp_beats = 1;
+int chord_notes[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 bool hold = false;
 bool last_hold = false;
 bool send_tick = false;
@@ -36,105 +87,65 @@ int CV3;
 /**
  * Quantize a V/oct input into a chord
  */
-void setChord(int note) {
-  int octaveSize;
-  int notesToShift;
+void setChord() {
+  int semitone = map(CV0, 0, 1023, 0, range);
+  int octave = ceil(semitone / 12);
+  int interval = semitone % 12;
+  int offset = (octave + octave_offset) * 12;
 
-  switch (scale) {
-    case 0:
-      octaveSize = 12;
-      notesToShift = (octaveOffset * octaveSize) + semitoneOffset;
-      chord_notes[0] = mapChromatic(note, 0);
-      chord_notes[1] = mapChromatic(note, 4);
-      chord_notes[2] = mapChromatic(note, 7);
-      for (int i = 0; i < 3; i++) {
-        chord_notes[i] = shiftNotes(chord_notes[i], notesToShift, chromaTable, sizeof(chromaTable));
-      }
-      break;
-    case 1:
-      octaveSize = 7;
-      notesToShift = (octaveOffset * octaveSize) + semitoneOffset;
-      chord_notes[0] = mapMaj(note, 0);
-      chord_notes[1] = mapMaj(note, 3);
-      chord_notes[2] = mapMaj(note, 5);
-      for (int i = 0; i < 3; i++) {
-        chord_notes[i] = shiftNotes(chord_notes[i], notesToShift, majTable, sizeof(majTable));
-      }
-      break;
-    case 2:
-      octaveSize = 7;
-      notesToShift = (octaveOffset * octaveSize) + semitoneOffset;
-      chord_notes[0] = mapMin(note, 0);
-      chord_notes[1] = mapMin(note, 3);
-      chord_notes[2] = mapMin(note, 5);
-      for (int i = 0; i < 3; i++) {
-        chord_notes[i] = shiftNotes(chord_notes[i], notesToShift, minTable, sizeof(minTable));
-      }
-      break;
-    case 3:
-      octaveSize = 6;
-      notesToShift = (octaveOffset * octaveSize) + semitoneOffset;
-      chord_notes[0] = mapPenta(note, 0);
-      chord_notes[1] = mapPenta(note, 3);
-      chord_notes[2] = mapPenta(note, 5);
-      for (int i = 0; i < 3; i++) {
-        chord_notes[i] = shiftNotes(chord_notes[i], notesToShift, pentaTable, sizeof(pentaTable));
-      }
-      break;
-    case 4:
-      octaveSize = 7;
-      notesToShift = (octaveOffset * octaveSize) + semitoneOffset;
-      chord_notes[0] = mapDorian(note, 0);
-      chord_notes[1] = mapDorian(note, 3);
-      chord_notes[2] = mapDorian(note, 5);
-      for (int i = 0; i < 3; i++) {
-        chord_notes[i] = shiftNotes(chord_notes[i], notesToShift, dorianTable, sizeof(dorianTable));
-      }
-      break;
-    case 5:
-      octaveSize = 4;
-      notesToShift = (octaveOffset * octaveSize) + semitoneOffset;
-      chord_notes[0] = mapMaj3rd(note, 0);
-      chord_notes[1] = mapMaj3rd(note, 1);
-      chord_notes[2] = mapMaj3rd(note, 2);
-      for (int i = 0; i < 3; i++) {
-        chord_notes[i] = shiftNotes(chord_notes[i], notesToShift, maj3rdTable, sizeof(maj3rdTable));
-      }
-      break;
-    case 6:
-      octaveSize = 4;
-      notesToShift = (octaveOffset * octaveSize) + semitoneOffset;
-      chord_notes[0] = mapMin3rd(note, 0);
-      chord_notes[1] = mapMin3rd(note, 1);
-      chord_notes[2] = mapMin3rd(note, 2);
-      for (int i = 0; i < 3; i++) {
-        chord_notes[i] = shiftNotes(chord_notes[i], notesToShift, min3rdTable, sizeof(min3rdTable));
-      }
-      break;
-    case 7:
-      octaveSize = 4;
-      notesToShift = (octaveOffset * octaveSize) + semitoneOffset;
-      chord_notes[0] = mapWh(note, 0);
-      chord_notes[1] = mapWh(note, 3);
-      chord_notes[2] = mapWh(note, 5);
-      for (int i = 0; i < 3; i++) {
-        chord_notes[i] = shiftNotes(chord_notes[i], notesToShift, whTable, sizeof(whTable));
-      }
-      break;
-  }
+  int note1 = SCALES[scale][interval] + offset;
+  int note2 = SCALES[scale][interval + 3] + offset;
+  int note3 = SCALES[scale][interval + 5] + offset;
+  int note4 = SCALES[scale][interval + 12] + offset;
+  int note5 = SCALES[scale][interval + 15] + offset;
+  int note6 = SCALES[scale][interval + 17] + offset;
 
-  if (total_arp_beats == 4) {
-    chord_notes[3] = chord_notes[1];
-  } else if (total_arp_beats == 5) {
-    int swap = chord_notes[2];
-    chord_notes[2] = chord_notes[0];
-    chord_notes[3] = swap;
-    chord_notes[4] = chord_notes[1];
+  total_arp_beats = arp_mode + 1;
+  chord_notes[0] = note1;
+  chord_notes[1] = note2;
+  chord_notes[2] = note3;
+  chord_notes[3] = note4;
+  chord_notes[4] = note5;
+  chord_notes[5] = note6;
+
+  switch (arp_mode) {
+    case 0: {
+      chord_notes[0] = note1;
+      break;
+    }
+    case 3: {
+      chord_notes[3] = chord_notes[1];
+      break;
+    }
+    case 4: {
+      chord_notes[2] = note1;
+      chord_notes[3] = note3;
+      chord_notes[4] = note2;
+      break;
+    }
+    case 6: {
+      total_arp_beats = 6;
+      chord_notes[0] = note6;
+      chord_notes[1] = note5;
+      chord_notes[2] = note4;
+      chord_notes[3] = note3;
+      chord_notes[4] = note2;
+      chord_notes[5] = note1;
+      break;
+    }
+    case 7: {
+      total_arp_beats = 9;
+      chord_notes[6] = note5;
+      chord_notes[7] = note4;
+      chord_notes[8] = note3;
+      break;
+    }
   }
 }
 
 void playNote(int quantizedNote) {
-  setDAC(quantizedNote);
+  uint32_t DC_Value = 400ul + ((quantizedNote * DAC_CAL) / 100ul);
+  setDAC(DC_Value);
 }
 
 void onClock() {
@@ -147,15 +158,12 @@ void readInputs() {
   CV2 = analogRead(pot2);
   CV3 = analogRead(pot3);
 
-  scale = map(CV1, 0, 1023, 0, 7);
-  octaveOffset = map(CV2, 0, 1023, 0, 3);
-  //semitoneOffset = map(CV2, 0, 1023, 0, 12);
-  total_arp_beats = map(CV3, 0, 1023, 1, 5);
+  scale = map(CV1, 0, 1023, 0, 8);
+  range = map(CV2, 0, 1023, 1, 48);
+  arp_mode = map(CV3, 0, 1023, 0, 7);
 }
 
-void setDAC(uint8_t key) {
-  uint32_t DC_Value = 400ul + ((key * DAC_CAL) / 100ul);
-
+void setDAC(uint32_t DC_Value) {
   Wire.beginTransmission(DAC_address);
   Wire.write(byte((DC_Value & 0x0f00) >> 8));
   Wire.write(byte(DC_Value & 0xff));
@@ -175,32 +183,38 @@ void setup() {
 
 void loop() {
   if (!send_tick) return;
-
   send_tick = false;
 
-  hold = digitalRead(HOLD_PIN) == HIGH;
+  // Random mode
+  if (scale == 8) {
+    int min_n = map(CV2, 0, 1024, 0, 4095);
+    int max_n = map(CV3, 0, 1024, 0, 4095);
+    if (min_n > max_n) {
+      int swap = min_n;
+      min_n = max_n;
+      max_n = swap;
+    }
+    setDAC(random(min_n, max_n));
+  }
 
-  readInputs();
-  setChord(CV0);
+  hold = digitalRead(HOLD_PIN) == HIGH;
 
   if (hold != last_hold) {
     last_hold = hold;
 
     if (hold) {
-//      Serial.print(" Scale ");
-//      Serial.println(scale);
-//      Serial.print(chord_notes[0]);
-//      Serial.print(" - ");
-//      Serial.print(chord_notes[1]);
-//      Serial.print(" - ");
-//      Serial.print(chord_notes[2]);
-//      Serial.println(" ");
+      readInputs();
+      setChord();
+      arp_beat = 0;
+
+      if (!send_tick) playNote(chord_notes[arp_beat]);
 
       digitalWrite(LED, HIGH);
     } else {
       digitalWrite(LED, LOW);
     }
   }
+
 
   playNote(chord_notes[arp_beat]);
 

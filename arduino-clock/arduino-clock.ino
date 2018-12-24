@@ -1,10 +1,10 @@
 #define CLOCK_PIN          2
-#define OUT1               7
-#define OUT2               8
-#define OUT3               9
-#define OUT4               10
-#define OUT5               11
-#define OUT6               12
+#define OUT1               8
+#define OUT2               9
+#define OUT3               10
+#define OUT4               11
+#define OUT5               12
+#define OUT6               13
 
 bool send_tick = false;
 bool on = false;
@@ -17,12 +17,12 @@ void onClock() {
 
 void setup() {
   pinMode(CLOCK_PIN, INPUT);
-  pinMode(12, OUTPUT);
-  pinMode(11, OUTPUT);
-  pinMode(10, OUTPUT);
-  pinMode(9, OUTPUT);
-  pinMode(8, OUTPUT);
-  pinMode(7, OUTPUT);
+  pinMode(OUT1, OUTPUT);
+  pinMode(OUT2, OUTPUT);
+  pinMode(OUT3, OUTPUT);
+  pinMode(OUT4, OUTPUT);
+  pinMode(OUT5, OUTPUT);
+  pinMode(OUT6, OUTPUT);
 
   attachInterrupt(digitalPinToInterrupt(CLOCK_PIN), onClock, CHANGE);
 }
@@ -35,11 +35,12 @@ void loop() {
     count += 1;
 
     if (count % 2 == 0) {
+      bool fourth = count % 4 == 0;
       digitalWrite(OUT1, HIGH);
-      digitalWrite(OUT3, count % 4 == 0);
-      digitalWrite(OUT4, count % 6 == 0);
-      digitalWrite(OUT5, count % 8 == 0);
-      digitalWrite(OUT6, count % 16 == 0);
+      digitalWrite(OUT3, fourth);
+      digitalWrite(OUT4, !fourth && count % 6 == 0);
+      digitalWrite(OUT5, fourth && count % 8 == 0);
+      digitalWrite(OUT6, fourth && count % 16 == 0);
     } else {
       digitalWrite(OUT2, count % 3 == 0);
     }

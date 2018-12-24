@@ -5,11 +5,11 @@
 #define OUT_PIN            13
 #define INVERTED_OUT_PIN   10
 #define RESET_PIN          A7
-#define LONG_PRESS         300
+#define LONG_PRESS         600
 #define SHORT_PRESS        10
 #define MAX_STEPS          8
 
-int leds[] = { 2, 7, 9, 8, 6, 5, 4, 3 };
+int leds[] = { 5, 4, 3, 2, 7, 9, 8, 6 };
 
 bool alt_positions = false;
 int active_steps1 = 1;
@@ -26,6 +26,7 @@ bool last_clock_state = false;
 bool last_button_state = false;
 bool last_reset_state = false;
 int button_pressed_time = 0;
+int long_pressed_time = 0;
 
 bool getPosition(uint8_t index, bool positions[MAX_STEPS]) {
   int step_idx = (index + offset) % steps;
@@ -34,35 +35,47 @@ bool getPosition(uint8_t index, bool positions[MAX_STEPS]) {
 
 void checkButton() {
   bool button_state = digitalRead(BUTTON_PIN) == LOW;
-  if (last_button_state == button_state) return;
-  last_button_state = button_state;
-
+  if (!button_state && last_button_state == button_state) return;
   int now = millis();
 
-  if (button_state) {
+  // Save the time when the button was pressed
+  if (button_state && !last_button_state) {
     button_pressed_time = now;
-  } else {
-    int press_duration = now - button_pressed_time;
+    long_pressed_time = now;
+  }
+  last_button_state = button_state;
 
-    if (press_duration < SHORT_PRESS) return;
+  int press_time = now - button_pressed_time;
 
-    if (press_duration >= LONG_PRESS) {
+  // On long press
+  if (button_state && press_time >= LONG_PRESS) {
+    if (now - long_pressed_time >= LONG_PRESS) {
+      //offset += 1;
+      //if (offset >= steps) offset = 0;
+
       alt_positions = !alt_positions;
-    } else {
-      if (alt_positions) {
-        active_steps2 += 1;
-        if (active_steps2 > steps) active_steps2 = 1;
-        setPositions(active_steps2, positions2);
-        EEPROM.write(1, active_steps2);
-      } else {
-        active_steps1 += 1;
-        if (active_steps1 > steps) active_steps1 = 1;
-        setPositions(active_steps1, positions1);
-        EEPROM.write(0, active_steps1);
-      }
-    }
 
+      setActiveLeds();
+      long_pressed_time = now;    
+    }
+    return;
+  }
+
+  // On button up after a short press
+  if (!button_state && press_time >= SHORT_PRESS && press_time < LONG_PRESS) {
+    if (alt_positions) {
+      active_steps2 += 1;
+      if (active_steps2 > steps) active_steps2 = 1;
+      setPositions(active_steps2, positions2);
+      EEPROM.write(1, active_steps2);
+    } else {
+      active_steps1 += 1;
+      if (active_steps1 > steps) active_steps1 = 1;
+      setPositions(active_steps1, positions1);
+      EEPROM.write(0, active_steps1);
+    }
     setActiveLeds();
+    return;
   }
 }
 
