@@ -37,6 +37,10 @@ Distributed as-is; no warranty is given.
 
 #include "notemap.h"
 
+#define CV_CHAN         2
+#define THRU_CHAN_SRC   1
+#define THRU_CHAN_DEST  4
+
 // Functional assignments to Arduino pin numbers.
 // Digital outputs
 static const int GATEPIN = 6; // the same as the green led pin (but inversed)
@@ -148,13 +152,17 @@ void updateOutputs() {
  *  Called by MIDI parser when note on messages arrive.
  */
 void handleNoteOn(byte channel, byte pitch, byte velocity) {
-  // Do whatever you want when a note is pressed.
-  // Try to keep your callbacks short (no delays ect)
-  // otherwise it would slow down the loop() and have a bad impact
-  // on real-time performance.
-  themap.noteOn(pitch);
-
-  updateOutputs();
+  if (channel == CV_CHAN) {
+    // Do whatever you want when a note is pressed.
+    // Try to keep your callbacks short (no delays ect)
+    // otherwise it would slow down the loop() and have a bad impact
+    // on real-time performance.
+    themap.noteOn(pitch);
+  
+    updateOutputs();
+  } else if (channel == THRU_CHAN_SRC) {
+     MIDI.sendNoteOn(pitch, velocity, THRU_CHAN_DEST);
+  }
 }
 
 /* void handleNoteOff(byte channel, byte pitch, byte velocity)
@@ -162,9 +170,13 @@ void handleNoteOn(byte channel, byte pitch, byte velocity) {
  *  Called by MIDI parser when note off messages arrive.
  */
 void handleNoteOff(byte channel, byte pitch, byte velocity) {
-  themap.noteOff(pitch);
-
-  updateOutputs();
+  if (channel == CV_CHAN) {
+    themap.noteOff(pitch);
+  
+    updateOutputs();
+  } else if (channel == THRU_CHAN_SRC) {
+     MIDI.sendNoteOff(pitch, velocity, THRU_CHAN_DEST);
+  }
 }
 
 /*void handlePitchBend(byte channel, int bend)
@@ -177,9 +189,13 @@ void handlePitchBend(byte channel, int bend) {
   // unsigned conversion & dual-7-bit thwacking
   // already handled by midi parser
 
-  last_bend = bend >> 5;
-
-  updateOutputs();
+  if (channel == CV_CHAN) {
+    last_bend = bend >> 5;
+  
+    updateOutputs();
+  } else if (channel == THRU_CHAN_SRC) {
+     MIDI.sendPitchBend(bend, THRU_CHAN_DEST);
+  }
 }
 
 /* void handleCC(byte channel, byte number, byte value)

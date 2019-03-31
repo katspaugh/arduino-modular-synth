@@ -8,7 +8,7 @@ static const int LED = 13;
 // Analog pins for the potentiometers
 const int pot1 = A1; // scale
 const int pot2 = A2; // octave
-const int pot3 = A3; // key
+const int pot3 = A3; // arp pattern
 
 const byte DAC_address = 0x60;
 // 2^12 = 4096 total DAC counts.
@@ -75,9 +75,8 @@ int arp_mode = 0;
 int arp_beat = 0;
 int total_arp_beats = 1;
 int chord_notes[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-bool hold = false;
-bool last_hold = false;
 bool send_tick = false;
+bool hold = false;
 
 int CV0;
 int CV1;
@@ -109,10 +108,6 @@ void setChord() {
   chord_notes[5] = note6;
 
   switch (arp_mode) {
-    case 0: {
-      chord_notes[0] = note1;
-      break;
-    }
     case 3: {
       chord_notes[3] = chord_notes[1];
       break;
@@ -153,13 +148,13 @@ void onClock() {
 }
 
 void readInputs() {
-  if (hold) CV0 = analogRead(VOCT_PIN);
+  CV0 = analogRead(VOCT_PIN);
   CV1 = analogRead(pot1);
   CV2 = analogRead(pot2);
   CV3 = analogRead(pot3);
 
   scale = map(CV1, 0, 1023, 0, 8);
-  range = map(CV2, 0, 1023, 1, 48);
+  octave_offset = map(CV2, 0, 1023, -2, 2);
   arp_mode = map(CV3, 0, 1023, 0, 7);
 }
 
@@ -172,49 +167,29 @@ void setDAC(uint32_t DC_Value) {
 
 void setup() {
   pinMode(CLOCK_PIN, INPUT);
-  pinMode(HOLD_PIN, INPUT);
+  pinMode(HOLD_PIN, INPUT); // normalized to the clock pin
   pinMode(LED, OUTPUT);
+  digitalWrite(LED, LOW);
 
   attachInterrupt(digitalPinToInterrupt(CLOCK_PIN), onClock, RISING);
 
-  //Serial.begin(9600);
   Wire.begin();
 }
 
 void loop() {
+  if (digitalRead(HOLD_PIN)) {
+    hold = true;
+  }
   if (!send_tick) return;
   send_tick = false;
 
-  // Random mode
-  if (scale == 8) {
-    int min_n = map(CV2, 0, 1024, 0, 4095);
-    int max_n = map(CV3, 0, 1024, 0, 4095);
-    if (min_n > max_n) {
-      int swap = min_n;
-      min_n = max_n;
-      max_n = swap;
-    }
-    setDAC(random(min_n, max_n));
+  readInputs();
+
+  if (arp_mode == 0 || hold) {
+    setChord();
+    hold = false;
+    arp_beat = 0;
   }
-
-  hold = digitalRead(HOLD_PIN) == HIGH;
-
-  if (hold != last_hold) {
-    last_hold = hold;
-
-    if (hold) {
-      readInputs();
-      setChord();
-      arp_beat = 0;
-
-      if (!send_tick) playNote(chord_notes[arp_beat]);
-
-      digitalWrite(LED, HIGH);
-    } else {
-      digitalWrite(LED, LOW);
-    }
-  }
-
 
   playNote(chord_notes[arp_beat]);
 
