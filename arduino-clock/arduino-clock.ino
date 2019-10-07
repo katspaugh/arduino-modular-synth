@@ -1,14 +1,31 @@
-#define CLOCK_PIN          2
-#define OUT1               8
-#define OUT2               9
+#define CLOCK_IN           3
+#define CV_IN              (A1)
+#define OUT1               12
+#define OUT2               11
 #define OUT3               10
-#define OUT4               11
-#define OUT5               12
-#define OUT6               13
+#define OUT4               9
+#define OUT5               8
+#define OUT6               7
+
+const int max_outs = 6;
+const int max_steps = 8;
+
+const boolean patterns[max_outs][max_steps] = {
+  { 0, 1, 0, 0, 1, 0, 0, 0 },
+  { 1, 0, 0, 1, 0, 0, 1, 0 },
+  { 0, 1, 1, 0, 1, 0, 1, 1 },
+  { 1, 0, 1, 1, 0, 1, 1, 0 },
+  { 1, 1, 0, 1, 1, 0, 1, 1 },
+  { 0, 1, 1, 1, 1, 1, 1, 1 }
+};
+
+const int outs[max_outs] = { OUT1, OUT2, OUT3, OUT4, OUT5, OUT6 };
 
 bool send_tick = false;
 bool on = false;
 int count = -1;
+int cv = 0;
+int i = 0;
 
 void onClock() {
   on = !on;
@@ -16,15 +33,13 @@ void onClock() {
 }
 
 void setup() {
-  pinMode(CLOCK_PIN, INPUT);
-  pinMode(OUT1, OUTPUT);
-  pinMode(OUT2, OUTPUT);
-  pinMode(OUT3, OUTPUT);
-  pinMode(OUT4, OUTPUT);
-  pinMode(OUT5, OUTPUT);
-  pinMode(OUT6, OUTPUT);
+  pinMode(CLOCK_IN, INPUT);
 
-  attachInterrupt(digitalPinToInterrupt(CLOCK_PIN), onClock, CHANGE);
+  for (i = 0; i < max_outs; i++) {
+    pinMode(outs[i], OUTPUT);
+  }
+
+  attachInterrupt(digitalPinToInterrupt(CLOCK_IN), onClock, CHANGE);
 }
 
 void loop() {
@@ -33,25 +48,16 @@ void loop() {
 
   if (on) {
     count += 1;
+    if (count >= max_steps) count = 0;
 
-    if (count % 2 == 0) {
-      bool fourth = count % 4 == 0;
-      digitalWrite(OUT1, HIGH);
-      digitalWrite(OUT3, fourth);
-      digitalWrite(OUT4, !fourth && count % 6 == 0);
-      digitalWrite(OUT5, fourth && count % 8 == 0);
-      digitalWrite(OUT6, fourth && count % 16 == 0);
-    } else {
-      digitalWrite(OUT2, count % 3 == 0);
+    cv = map(analogRead(CV_IN), 0, 1024, 0, max_outs - 1);
+
+    for (i = 0; i < max_outs; i++) {
+      digitalWrite(outs[i], patterns[((i + cv) % max_outs)][count]);
     }
-
-    if (count >= 96) count = 0;
   } else {
-    digitalWrite(OUT1, LOW);
-    digitalWrite(OUT2, LOW);
-    digitalWrite(OUT3, LOW);
-    digitalWrite(OUT4, LOW);
-    digitalWrite(OUT5, LOW);
-    digitalWrite(OUT6, LOW);
+    for (i = 0; i < max_outs; i++) {
+      digitalWrite(outs[i], LOW);
+    }
   }
 }
