@@ -22,6 +22,7 @@ void onClock() {
 
 void setup() {
   pinMode(CLOCK_PIN, INPUT);
+  pinMode(CV_PIN, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
 
   for (i = 0; i < max_outs; i++) {
@@ -32,28 +33,21 @@ void setup() {
 }
 
 void loop() {
-  digitalWrite(LED_BUILTIN, clock_high);
-
   if (!clock_tick) { return; }
   clock_tick = false;
 
-  if (clock_high) {
-    for (i = max_outs - 1; i > 0; i--) {
-      states[i] = states[i - 1];
-      if (states[i]) {
-        digitalWrite(outs[i], HIGH);
-      }
-    }
+  digitalWrite(LED_BUILTIN, clock_high);
 
-    states[0] = analogRead(CV_PIN) > 500;
-    if (states[0]) {
-      digitalWrite(outs[0], HIGH);
-    }
-  } else {
-    digitalWrite(LED_BUILTIN, LOW);
+  if (!clock_high) { return; }
 
-    for (i = 0; i < max_outs; i++) {
-      digitalWrite(outs[i], LOW);
-    }
+  for (i = max_outs - 1; i > 0; i--) {
+    int prev = i - 1;
+    states[i] = states[i - 1];
+  }
+
+  states[0] = digitalRead(CV_PIN);
+
+  for (i = 0; i < max_outs; i++) {
+    digitalWrite(outs[i], states[i]);
   }
 }
